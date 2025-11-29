@@ -62,7 +62,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = 'satika-erp-v1'; // FIXED: Hardcoded app ID
+
+// --- CONFIGURATION ---
+const APP_ID = 'satika-erp-v1'; 
+const COMPANY_ID = 'satika_main_store_01'; // FIXED: Shared Company ID for all devices
 
 // --- Branding ---
 const BRAND = {
@@ -341,23 +344,24 @@ const Dashboard = ({ inventory, invoices, expenses, setActiveTab, currentUser })
 };
 
 // --- MODULE 2: Team Module ---
-const TeamModule = ({ user, appId }) => {
+const TeamModule = () => {
   const [team, setTeam] = useState([]);
   const [newMember, setNewMember] = useState({ name: '', role: 'Worker', userId: '', password: '', phone: '' });
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
-    const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'team'));
+    // FIXED: Use COMPANY_ID
+    const q = query(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'team'));
     return onSnapshot(q, (s) => setTeam(s.docs.map(d => ({id: d.id, ...d.data()}))), (e) => console.error(e));
-  }, [user, appId]);
+  }, []);
 
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!newMember.userId || newMember.password.length < 4) return alert("Please enter valid credentials.");
     if (team.find(m => m.userId === newMember.userId)) return alert("User ID already exists.");
 
-    await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'team'), {
+    // FIXED: Use COMPANY_ID
+    await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'team'), {
       ...newMember, createdAt: serverTimestamp()
     });
     setNewMember({ name: '', role: 'Worker', userId: '', password: '', phone: '' });
@@ -366,7 +370,8 @@ const TeamModule = ({ user, appId }) => {
 
   const handleDelete = async (id) => {
     if (team.length <= 1) return alert("Cannot delete the last user.");
-    if (window.confirm("Remove this user?")) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'team', id));
+    // FIXED: Use COMPANY_ID
+    if (window.confirm("Remove this user?")) await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'team', id));
   };
 
   return (
@@ -421,7 +426,7 @@ const TeamModule = ({ user, appId }) => {
 };
 
 // --- MODULE 3: Capital & Equity Module ---
-const CapitalModule = ({ user, appId, invoices, expenses }) => {
+const CapitalModule = ({ invoices, expenses }) => {
   const [team, setTeam] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [distributions, setDistributions] = useState([]); 
@@ -429,12 +434,12 @@ const CapitalModule = ({ user, appId, invoices, expenses }) => {
   const [entry, setEntry] = useState({ ownerId: '', amount: '', notes: '' });
 
   useEffect(() => {
-    if (!user) return;
-    const unsubTeam = onSnapshot(query(collection(db, 'artifacts', appId, 'users', COMPANY_ID, 'team')), s => setTeam(s.docs.map(d => ({id:d.id, ...d.data()})).filter(m => m.role === 'Admin' || m.role === 'Owner')), e=>console.log(e));
-    const unsubTrans = onSnapshot(query(collection(db, 'artifacts', appId, 'users', COMPANY_ID, 'capital_transactions')), s => setTransactions(s.docs.map(d => d.data())), e=>console.log(e));
-    const unsubDist = onSnapshot(query(collection(db, 'artifacts', appId, 'users', COMPANY_ID, 'profit_distributions')), s => setDistributions(s.docs.map(d => d.data())), e=>console.log(e));
+    // FIXED: Use COMPANY_ID
+    const unsubTeam = onSnapshot(query(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'team')), s => setTeam(s.docs.map(d => ({id:d.id, ...d.data()})).filter(m => m.role === 'Admin' || m.role === 'Owner')), e=>console.log(e));
+    const unsubTrans = onSnapshot(query(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'capital_transactions')), s => setTransactions(s.docs.map(d => d.data())), e=>console.log(e));
+    const unsubDist = onSnapshot(query(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'profit_distributions')), s => setDistributions(s.docs.map(d => d.data())), e=>console.log(e));
     return () => { unsubTeam(); unsubTrans(); unsubDist(); };
-  }, [user, appId]);
+  }, []);
 
   const owners = useMemo(() => {
     return team.map(owner => {
@@ -465,7 +470,8 @@ const CapitalModule = ({ user, appId, invoices, expenses }) => {
   const handleTransaction = async (e) => {
     e.preventDefault();
     if(!entry.ownerId || !entry.amount) return;
-    await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'capital_transactions'), {
+    // FIXED: Use COMPANY_ID
+    await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'capital_transactions'), {
       ...entry, type: modal.type, date: new Date().toISOString()
     });
     setModal({ open: false, type: 'invest' }); setEntry({ ownerId: '', amount: '', notes: '' });
@@ -474,7 +480,8 @@ const CapitalModule = ({ user, appId, invoices, expenses }) => {
   const distributeProfit = async (ownerId, amount) => {
     if(!amount || amount <= 0) return;
     if(amount > financials.availableProfit) return alert("Not enough available profit!");
-    await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'profit_distributions'), {
+    // FIXED: Use COMPANY_ID
+    await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'profit_distributions'), {
       ownerId, amount: parseFloat(amount), date: new Date().toISOString()
     });
     alert("Profit Allocated!");
@@ -575,17 +582,21 @@ const CapitalModule = ({ user, appId, invoices, expenses }) => {
 };
 
 // --- MODULE 4: Expense Manager ---
-const ExpenseManager = ({ expenses, user, appId }) => {
+const ExpenseManager = ({ expenses }) => {
   const [newExp, setNewExp] = useState({ title: '', amount: '', category: 'Rent', date: new Date().toISOString().split('T')[0] });
   const [isFormOpen, setIsFormOpen] = useState(false);
   const categories = ['Rent', 'Salaries', 'Utilities', 'Maintenance', 'Marketing', 'Inventory Purchase', 'Other'];
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'expenses'), { ...newExp, amount: parseFloat(newExp.amount), createdAt: serverTimestamp() });
+    // FIXED: Use COMPANY_ID
+    await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'expenses'), { ...newExp, amount: parseFloat(newExp.amount), createdAt: serverTimestamp() });
     setNewExp({ title: '', amount: '', category: 'Rent', date: new Date().toISOString().split('T')[0] }); setIsFormOpen(false);
   };
-  const handleDelete = async (id) => { if(window.confirm("Delete?")) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'expenses', id)); };
+  const handleDelete = async (id) => { 
+    // FIXED: Use COMPANY_ID
+    if(window.confirm("Delete?")) await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'expenses', id)); 
+  };
 
   return (
     <div className="h-full flex flex-col gap-4">
@@ -615,7 +626,7 @@ const ExpenseManager = ({ expenses, user, appId }) => {
 };
 
 // --- MODULE 5: Inventory Manager ---
-const InventoryManager = ({ inventory, user, appId }) => {
+const InventoryManager = ({ inventory }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [item, setItem] = useState({ name: "", sku: "", quantity: 0, price: 0, cost: 0, location: "Main Warehouse" });
@@ -624,7 +635,8 @@ const InventoryManager = ({ inventory, user, appId }) => {
 
   const handleAdd = async (e) => {
     e.preventDefault();
-    await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'inventory'), { ...item, quantity: parseInt(item.quantity), price: parseFloat(item.price), cost: parseFloat(item.cost), createdAt: serverTimestamp() });
+    // FIXED: Use COMPANY_ID
+    await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'inventory'), { ...item, quantity: parseInt(item.quantity), price: parseFloat(item.price), cost: parseFloat(item.cost), createdAt: serverTimestamp() });
     setShowAdd(false); setItem({ name: "", sku: "", quantity: 0, price: 0, cost: 0, location: "Main Warehouse" });
   };
 
@@ -633,12 +645,12 @@ const InventoryManager = ({ inventory, user, appId }) => {
     let count = 0;
     const batch = writeBatch(db); 
     
-    // Process only first 20 for safety in one go or standard loops for more
     for (let i = 0; i < Math.min(lines.length, 50); i++) {
         const line = lines[i];
         const [name, sku, quantity, price, location] = line.split(',');
         if (name && price) {
-            const ref = doc(collection(db, 'artifacts', appId, 'users', user.uid, 'inventory'));
+            // FIXED: Use COMPANY_ID
+            const ref = doc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'inventory'));
             batch.set(ref, {
                 name: name.trim(), 
                 sku: sku?.trim() || `SKU-${Math.floor(Math.random()*1000)}`,
@@ -655,7 +667,10 @@ const InventoryManager = ({ inventory, user, appId }) => {
     setShowBulk(false); setBulkData(""); alert(`Uploaded ${count} items!`);
   };
 
-  const handleDelete = async (id) => { if(window.confirm("Delete this item?")) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'inventory', id)); };
+  const handleDelete = async (id) => { 
+    // FIXED: Use COMPANY_ID
+    if(window.confirm("Delete this item?")) await deleteDoc(doc(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'inventory', id)); 
+  };
 
   const filtered = inventory.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) || i.sku?.toLowerCase().includes(search.toLowerCase()));
 
@@ -727,7 +742,7 @@ const InventoryManager = ({ inventory, user, appId }) => {
 };
 
 // --- MODULE 6: POS System (Required for Reports) ---
-const POSSystem = ({ inventory, user, appId }) => {
+const POSSystem = ({ inventory }) => {
     const [cart, setCart] = useState([]);
     const [search, setSearch] = useState("");
     const [checkoutMeta, setCheckoutMeta] = useState({ customerName: '', phone: '', channel: 'Store' });
@@ -750,7 +765,8 @@ const POSSystem = ({ inventory, user, appId }) => {
         const batch = writeBatch(db);
 
         // 1. Create Invoice
-        const invoiceRef = doc(collection(db, 'artifacts', appId, 'users', user.uid, 'invoices'));
+        // FIXED: Use COMPANY_ID
+        const invoiceRef = doc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'invoices'));
         batch.set(invoiceRef, {
             items: cart.map(({id, name, price, cost, qty}) => ({id, name, price, cost, qty})),
             total: cartTotal,
@@ -763,8 +779,8 @@ const POSSystem = ({ inventory, user, appId }) => {
 
         // 2. Reduce Inventory
         for(let item of cart) {
-             const itemRef = doc(db, 'artifacts', appId, 'users', user.uid, 'inventory', item.id);
-             // Note: In real app, check stock first. Here we assume stock exists for simplicity or allow negative
+             // FIXED: Use COMPANY_ID
+             const itemRef = doc(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'inventory', item.id);
              const currentStock = inventory.find(i => i.id === item.id)?.quantity || 0;
              batch.update(itemRef, { quantity: currentStock - item.qty });
         }
@@ -902,7 +918,6 @@ const ReportsModule = ({ invoices, expenses }) => {
 // --- MAIN APP COMPONENT ---
 const SatikaApp = () => {
   const [user, setUser] = useState(null);
-  // We use a loading state for auth check
   const [currentUser, setCurrentUser] = useState(null); 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -920,7 +935,7 @@ const SatikaApp = () => {
   // 1. Firebase Auth & Initial Setup
   useEffect(() => {
     const initAuth = async () => {
-      await signInAnonymously(auth); // Anonymous auth to read DB first
+      await signInAnonymously(auth); 
     };
     initAuth();
     return onAuthStateChanged(auth, (u) => {
@@ -930,15 +945,16 @@ const SatikaApp = () => {
 
   // 2. Data Fetching (Real-time)
   useEffect(() => {
-    if (!user) return;
+    // Note: We don't need "user" to start listening, just anonymous auth.
+    // We use COMPANY_ID instead of user.uid
     
-    const unsubTeam = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'team'), s => setTeam(s.docs.map(d => ({id:d.id, ...d.data()}))));
-    const unsubInv = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'inventory'), s => setInventory(s.docs.map(d => ({id:d.id, ...d.data()}))));
-    const unsubBill = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'invoices'), s => setInvoices(s.docs.map(d => ({id:d.id, ...d.data()}))));
-    const unsubExp = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'expenses'), s => setExpenses(s.docs.map(d => ({id:d.id, ...d.data()}))));
+    const unsubTeam = onSnapshot(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'team'), s => setTeam(s.docs.map(d => ({id:d.id, ...d.data()}))));
+    const unsubInv = onSnapshot(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'inventory'), s => setInventory(s.docs.map(d => ({id:d.id, ...d.data()}))));
+    const unsubBill = onSnapshot(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'invoices'), s => setInvoices(s.docs.map(d => ({id:d.id, ...d.data()}))));
+    const unsubExp = onSnapshot(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'expenses'), s => setExpenses(s.docs.map(d => ({id:d.id, ...d.data()}))));
 
     return () => { unsubTeam(); unsubInv(); unsubBill(); unsubExp(); };
-  }, [user]);
+  }, []);
 
   // 3. Login Logic
   const handleLogin = async (e) => {
@@ -953,8 +969,9 @@ const SatikaApp = () => {
         password: loginPass, 
         createdAt: serverTimestamp()
       };
-      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'team'), adminData);
-      setCurrentUser(adminData); // Log in immediately
+      // FIXED: Use COMPANY_ID
+      await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'team'), adminData);
+      setCurrentUser(adminData); 
       alert("Admin Account Created Successfully!");
       return;
     }
@@ -1064,8 +1081,31 @@ const SatikaApp = () => {
         <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setIsMobileMenuOpen(false)}>
            <div className="bg-white w-64 h-full p-4" onClick={e => e.stopPropagation()}>
               <div className="mb-6 font-bold text-xl">Menu</div>
-              {/* (Same nav items as desktop) */}
-              {/* ... simplified for brevity ... */}
+              <nav className="flex-1 overflow-y-auto p-4 space-y-2">
+                {[
+                  { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+                  { id: 'billing', icon: ShoppingCart, label: 'POS & Billing' },
+                  { id: 'inventory', icon: Package, label: 'Inventory' },
+                  { id: 'expenses', icon: DollarSign, label: 'Expenses' },
+                  { id: 'reports', icon: FileText, label: 'Reports' },
+                  { id: 'capital', icon: Coins, label: 'Capital & Equity', adminOnly: true },
+                  { id: 'team', icon: Users, label: 'Team Access', adminOnly: true },
+                ].map(item => (
+                  (!item.adminOnly || currentUser.role !== 'Worker') && (
+                    <button
+                      key={item.id}
+                      onClick={() => {setActiveTab(item.id); setIsMobileMenuOpen(false);}}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === item.id ? `${BRAND.light} ${BRAND.primaryText} font-bold shadow-sm` : 'text-slate-500 hover:bg-slate-50'}`}
+                    >
+                      <item.icon size={20} />
+                      {item.label}
+                    </button>
+                  )
+                ))}
+                <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 text-rose-600 mt-4 border-t">
+                  Log Out
+                </button>
+              </nav>
            </div>
         </div>
       )}
@@ -1073,11 +1113,11 @@ const SatikaApp = () => {
       {/* Main Content Area */}
       <main className="flex-1 md:ml-64 p-4 md:p-8 pt-20 md:pt-8 overflow-x-hidden">
         {activeTab === 'dashboard' && <Dashboard inventory={inventory} invoices={invoices} expenses={expenses} setActiveTab={setActiveTab} currentUser={currentUser} />}
-        {activeTab === 'team' && <TeamModule user={user} appId={appId} />}
-        {activeTab === 'capital' && <CapitalModule user={user} appId={appId} invoices={invoices} expenses={expenses} />}
-        {activeTab === 'expenses' && <ExpenseManager expenses={expenses} user={user} appId={appId} />}
-        {activeTab === 'inventory' && <InventoryManager inventory={inventory} user={user} appId={appId} />}
-        {activeTab === 'billing' && <POSSystem inventory={inventory} user={user} appId={appId} />}
+        {activeTab === 'team' && <TeamModule />}
+        {activeTab === 'capital' && <CapitalModule invoices={invoices} expenses={expenses} />}
+        {activeTab === 'expenses' && <ExpenseManager expenses={expenses} />}
+        {activeTab === 'inventory' && <InventoryManager inventory={inventory} />}
+        {activeTab === 'billing' && <POSSystem inventory={inventory} />}
         {activeTab === 'reports' && <ReportsModule invoices={invoices} expenses={expenses} />}
       </main>
     </div>
