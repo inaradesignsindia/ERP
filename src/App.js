@@ -416,6 +416,61 @@ const IntegrationsModule = () => {
   );
 };
 
+// 6. Reports Module (RESTORED)
+const ReportsModule = ({ invoices, expenses }) => {
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className={`text-2xl font-bold ${BRAND.primaryText}`}>Business Reports</h2>
+        <Button onClick={() => downloadCSV(invoices, `satika_sales_report_${new Date().toISOString().split('T')[0]}.csv`)} icon={Download}>Export Sales CSV</Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+            <h3 className="font-bold mb-4 flex items-center gap-2"><FileText size={18}/> Recent Invoices</h3>
+            <div className="overflow-auto h-64">
+                <table className="w-full text-sm text-left">
+                    <thead className="sticky top-0 bg-white border-b">
+                        <tr><th>Date</th><th>Invoice #</th><th>Customer</th><th>Amount</th></tr>
+                    </thead>
+                    <tbody>
+                        {invoices.slice(0,20).map(inv => (
+                            <tr key={inv.id} className="border-b">
+                                <td className="p-2">{new Date(inv.date).toLocaleDateString()}</td>
+                                <td className="p-2 font-mono text-xs">{inv.id.slice(0,8)}</td>
+                                <td className="p-2">{inv.customerName}</td>
+                                <td className="p-2 font-bold">₹{inv.total}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </Card>
+
+        <Card>
+            <h3 className="font-bold mb-4 flex items-center gap-2"><DollarSign size={18}/> Recent Expenses</h3>
+            <div className="overflow-auto h-64">
+                <table className="w-full text-sm text-left">
+                    <thead className="sticky top-0 bg-white border-b">
+                        <tr><th>Date</th><th>Category</th><th>Amount</th></tr>
+                    </thead>
+                    <tbody>
+                        {expenses.slice(0,20).map(e => (
+                            <tr key={e.id} className="border-b">
+                                <td className="p-2">{e.date}</td>
+                                <td className="p-2"><Badge>{e.category}</Badge></td>
+                                <td className="p-2 font-bold text-rose-600">₹{e.amount}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </Card>
+      </div>
+    </div>
+  );
+};
+
 // --- USER ACCESS (RENAMED) ---
 const UserSettings = ({ appId }) => {
   const [team, setTeam] = useState([]);
