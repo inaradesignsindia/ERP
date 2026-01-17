@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import {
-  Search, ShoppingCart, Trash2, Plus, Download, Filter, Package, Truck, Store, User, PieChart as PieIcon, BarChart2, TrendingUp, AlertCircle, Calendar, RefreshCw, X, Menu, Settings, LogOut, ChevronRight, FileText, LayoutDashboard, Database, CreditCard, Wallet, RotateCcw, Upload, Layers, Sun, Moon, Globe, Users, Lock, ArrowRightLeft, Coins, Link, MapPin, Mail, FileDown, ChartBarIcon, Instagram, Facebook, DollarSign, CheckCircle
+  Search, ShoppingCart, Trash2, Plus, Download, Filter, Package, Truck, Store, User, PieChart as PieIcon, BarChart2, TrendingUp, AlertCircle, Calendar, RefreshCw, X, Menu, Settings, LogOut, ChevronRight, FileText, LayoutDashboard, Database, CreditCard, Wallet, RotateCcw, Upload, Layers, Sun, Moon, Globe, Users, Lock, ArrowRightLeft, Coins, Link, MapPin, Mail, FileDown, ChartBarIcon, Instagram, Facebook, DollarSign, CheckCircle, Sparkles, Send, MessageCircle, Building2, Image as ImageIcon, FileCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -34,6 +35,10 @@ const COMPANY_ID = 'inara_main_store_01';
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// Initialize Gemini AI
+const genAI = new GoogleGenerativeAI('AIzaSyDGXKBZJPBNqvJGGZCQKJxWJON-Ht5KYxs'); // Replace with your API key
+const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
 // --- BRANDING ---
 const BRAND = {
@@ -978,7 +983,243 @@ const ExpenseManager = ({ expenses, outlets, parties, showToast }) => {
   );
 };
 
-// --- 6. EXTRAS ---
+// --- 6. ESTIMATES/QUOTES MODULE ---
+const EstimatesModule = ({ inventory, parties, showToast }) => {
+  const [estimates, setEstimates] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [meta, setMeta] = useState({ customerName: '', validUntil: '', notes: '' });
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'estimates'), s => setEstimates(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    return unsub;
+  }, []);
+
+  const addToCart = (item) => {
+    const existing = cart.find(c => c.id === item.id);
+    if (existing) setCart(cart.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c));
+    else setCart([...cart, { ...item, qty: 1 }]);
+  };
+
+  const handleCreateEstimate = async () => {
+    if (cart.length === 0) return showToast('Add items to estimate', 'error');
+    const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const tax = subtotal * 0.12;
+    const total = subtotal + tax;
+    await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'estimates'), {
+      items: cart, ...meta, subtotal, tax, total, status: 'Draft', date: new Date().toISOString(), createdAt: serverTimestamp()
+    });
+    showToast('Estimate created');
+    setCart([]);
+    setMeta({ customerName: '', validUntil: '', notes: '' });
+  };
+
+  const convertToInvoice = async (estimate) => {
+    await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'invoices'), {
+      ...estimate, status: 'Sent', billNumber: `INV-${Date.now()}`, estimateId: estimate.id, date: new Date().toISOString()
+    });
+    showToast('Converted to Invoice');
+  };
+
+  const filteredInventory = inventory.filter(i => i.name.toLowerCase().includes(searchTerm.toLowerCase()) || i.sku?.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Estimates & Quotes</h2>
+        <Badge className="bg-purple-100 text-purple-700">Pre-Sale Documents</Badge>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          <Card className="p-4"><input type="text" placeholder="Search products..." className="w-full p-3 border rounded-xl dark:bg-slate-800" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></Card>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {filteredInventory.slice(0, 12).map(item => (
+              <Card key={item.id} onClick={() => addToCart(item)} className="p-4 cursor-pointer hover:shadow-lg transition-all">
+                <h4 className="font-bold text-gray-800 dark:text-white">{item.name}</h4>
+                <p className="text-xs text-gray-500">{item.sku}</p>
+                <p className="text-lg font-bold text-purple-600 mt-2">₹{item.price}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-4">
+          <Card className="p-4">
+            <h3 className="font-bold mb-4">Estimate Details</h3>
+            <input type="text" placeholder="Customer Name" className="w-full p-2 border rounded-lg mb-2 dark:bg-slate-800" value={meta.customerName} onChange={e => setMeta({ ...meta, customerName: e.target.value })} />
+            <input type="date" className="w-full p-2 border rounded-lg mb-2 dark:bg-slate-800" value={meta.validUntil} onChange={e => setMeta({ ...meta, validUntil: e.target.value })} />
+            <textarea placeholder="Notes" className="w-full p-2 border rounded-lg dark:bg-slate-800" value={meta.notes} onChange={e => setMeta({ ...meta, notes: e.target.value })} />
+          </Card>
+          <Card className="p-4">
+            <h3 className="font-bold mb-4">Cart ({cart.length})</h3>
+            {cart.map(item => <div key={item.id} className="flex justify-between mb-2 text-sm"><span>{item.name} x{item.qty}</span><span>₹{item.price * item.qty}</span></div>)}
+            <Button className="w-full mt-4 py-3" onClick={handleCreateEstimate}>Create Estimate</Button>
+          </Card>
+        </div>
+      </div>
+      <Card className="p-6">
+        <h3 className="font-bold text-lg mb-4">Recent Estimates</h3>
+        <div className="overflow-x-auto"><table className="w-full"><thead><tr className="border-b"><th className="text-left p-2">Customer</th><th className="text-left p-2">Date</th><th className="text-left p-2">Total</th><th className="text-left p-2">Status</th><th className="text-left p-2">Actions</th></tr></thead><tbody>
+          {estimates.map(est => (
+            <tr key={est.id} className="border-b">
+              <td className="p-2">{est.customerName}</td>
+              <td className="p-2">{new Date(est.date).toLocaleDateString()}</td>
+              <td className="p-2 font-bold">₹{est.total}</td>
+              <td className="p-2"><Badge className={est.status === 'Converted' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}>{est.status}</Badge></td>
+              <td className="p-2">{est.status !== 'Converted' && <Button onClick={() => convertToInvoice(est)} className="px-3 py-1 text-xs">Convert to Invoice</Button>}</td>
+            </tr>
+          ))}
+        </tbody></table></div>
+      </Card>
+    </div>
+  );
+};
+
+// --- 7. ORGANIZATION PROFILE ---
+const OrganizationProfile = ({ showToast }) => {
+  const [profile, setProfile] = useState({ companyName: 'INARA Designs', address: '', taxId: '', email: '', phone: '', logo: '' });
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'settings'), s => {
+      if (s.docs.length > 0) setProfile({ ...profile, ...s.docs[0].data() });
+    });
+    return unsub;
+  }, []);
+
+  const handleSave = async () => {
+    await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'settings'), { ...profile, updatedAt: serverTimestamp() });
+    showToast('Organization profile updated');
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <Building2 size={32} className="text-purple-600" />
+        <div><h2 className="text-2xl font-bold text-gray-800 dark:text-white">Organization Profile</h2><p className="text-sm text-gray-500">Company information displayed on invoices</p></div>
+      </div>
+      <Card className="p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div><label className="text-xs font-bold text-gray-500 mb-1 block">Company Name</label><input className="w-full p-3 border rounded-xl dark:bg-slate-800" value={profile.companyName} onChange={e => setProfile({ ...profile, companyName: e.target.value })} /></div>
+          <div><label className="text-xs font-bold text-gray-500 mb-1 block">Tax ID / GST Number</label><input className="w-full p-3 border rounded-xl dark:bg-slate-800" value={profile.taxId} onChange={e => setProfile({ ...profile, taxId: e.target.value })} /></div>
+          <div className="md:col-span-2"><label className="text-xs font-bold text-gray-500 mb-1 block">Address</label><textarea className="w-full p-3 border rounded-xl dark:bg-slate-800" rows="3" value={profile.address} onChange={e => setProfile({ ...profile, address: e.target.value })} /></div>
+          <div><label className="text-xs font-bold text-gray-500 mb-1 block">Email</label><input type="email" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={profile.email} onChange={e => setProfile({ ...profile, email: e.target.value })} /></div>
+          <div><label className="text-xs font-bold text-gray-500 mb-1 block">Phone</label><input className="w-full p-3 border rounded-xl dark:bg-slate-800" value={profile.phone} onChange={e => setProfile({ ...profile, phone: e.target.value })} /></div>
+          <div className="md:col-span-2"><label className="text-xs font-bold text-gray-500 mb-1 block">Company Logo URL</label><input className="w-full p-3 border rounded-xl dark:bg-slate-800" placeholder="https://..." value={profile.logo} onChange={e => setProfile({ ...profile, logo: e.target.value })} /></div>
+        </div>
+        <Button onClick={handleSave} className="mt-6">Save Profile</Button>
+      </Card>
+    </div>
+  );
+};
+
+// --- 8. AI ASSISTANT ---
+const AIAssistant = ({ inventory, invoices, expenses }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const generateContext = () => {
+    const totalRevenue = invoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+    const totalExpenses = expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+    const lowStockItems = inventory.filter(i => i.quantity < 5);
+    const topProducts = inventory.sort((a, b) => (b.quantity || 0) - (a.quantity || 0)).slice(0, 5);
+
+    return `You are Inara AI, an intelligent assistant for INARA ERP system. Current business data:
+- Total Revenue: ₹${totalRevenue.toLocaleString()}
+- Total Expenses: ₹${totalExpenses.toLocaleString()}
+- Net Profit: ₹${(totalRevenue - totalExpenses).toLocaleString()}
+- Total Inventory Items: ${inventory.length}
+- Low Stock Items (< 5 units): ${lowStockItems.length} items
+- Top 5 Products by Stock: ${topProducts.map(p => p.name).join(', ')}
+- Total Invoices: ${invoices.length}
+
+Answer questions about sales, inventory, expenses, and provide business insights. Be concise and actionable.`;
+  };
+
+  const handleSend = async () => {
+    if (!input.trim()) return;
+    const userMessage = { role: 'user', content: input };
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setIsLoading(true);
+
+    try {
+      const context = generateContext();
+      const prompt = `${context}\n\nUser Question: ${input}`;
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const aiMessage = { role: 'assistant', content: response.text() };
+      setMessages(prev => [...prev, aiMessage]);
+    } catch (error) {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }]);
+    }
+    setIsLoading(false);
+  };
+
+  return (
+    <>
+      <motion.button
+        onClick={() => setIsOpen(!isOpen)}
+        className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-gradient-to-r from-purple-600 to-purple-800 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform"
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.95 }}
+      >
+        {isOpen ? <X size={24} /> : <Sparkles size={24} />}
+      </motion.button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-24 right-6 z-50 w-96 h-[500px] glass rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-purple-200"
+          >
+            <div className="p-4 bg-gradient-to-r from-purple-600 to-purple-800 text-white flex items-center gap-3">
+              <Sparkles size={24} />
+              <div className="flex-1"><h3 className="font-bold">Inara AI Assistant</h3><p className="text-xs text-purple-100">Powered by Google Gemini</p></div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {messages.length === 0 && (
+                <div className="text-center text-gray-500 mt-8">
+                  <MessageCircle size={48} className="mx-auto mb-4 text-purple-300" />
+                  <p className="text-sm">Ask me about your sales, inventory, or business insights!</p>
+                </div>
+              )}
+              {messages.map((msg, idx) => (
+                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] p-3 rounded-2xl ${msg.role === 'user' ? 'bg-purple-600 text-white' : 'bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-white'}`}>
+                    <p className="text-sm">{msg.content}</p>
+                  </div>
+                </div>
+              ))}
+              {isLoading && <div className="flex justify-start"><div className="bg-gray-100 dark:bg-slate-800 p-3 rounded-2xl"><div className="flex gap-1"><div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce"></div><div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div><div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div></div></div></div>}
+            </div>
+
+            <div className="p-4 border-t dark:border-slate-700">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyPress={e => e.key === 'Enter' && handleSend()}
+                  placeholder="Ask anything..."
+                  className="flex-1 p-3 border rounded-xl dark:bg-slate-800 dark:border-slate-700"
+                />
+                <button onClick={handleSend} disabled={isLoading} className="px-4 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 disabled:opacity-50">
+                  <Send size={20} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+};
+
+// --- 9. EXTRAS ---
 const IntegrationsModule = () => (
   <div className="space-y-6">
     <h2 className="text-2xl font-bold text-gray-800">Integrations</h2>
@@ -1130,12 +1371,14 @@ const InaraApp = () => {
         <nav className="flex-1 p-6 space-y-3 overflow-y-auto">
           {[
             { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+            { id: 'estimates', icon: FileCheck, label: 'Estimates & Quotes' },
             { id: 'billing', icon: ShoppingCart, label: 'Terminal / POS' },
             { id: 'inventory', icon: Package, label: 'Inventory' },
             { id: 'procurement', icon: Truck, label: 'Procurement' },
             { id: 'expenses', icon: DollarSign, label: 'Finance' },
             { id: 'reports', icon: FileText, label: 'Reports' },
             { id: 'parties', icon: Store, label: 'Parties & Outlets', admin: true },
+            { id: 'organization', icon: Building2, label: 'Organization', admin: true },
             { id: 'integrations', icon: Link, label: 'Integrations', admin: true },
             { id: 'team', icon: Settings, label: 'User Settings', admin: true },
           ].map(i => (!i.admin || currentUser.role !== 'Worker') && (
@@ -1164,9 +1407,11 @@ const InaraApp = () => {
             transition={{ duration: 0.3 }}
           >
             {activeTab === 'dashboard' && <Dashboard inventory={inventory} invoices={invoices} expenses={expenses} currentUser={currentUser} showToast={showToast} />}
+            {activeTab === 'estimates' && <EstimatesModule inventory={inventory} parties={parties} showToast={showToast} />}
             {activeTab === 'procurement' && <ProcurementModule inventory={inventory} parties={parties} showToast={showToast} />}
             {activeTab === 'team' && <UserSettings appId={APP_ID} />}
             {activeTab === 'parties' && <PartiesModule />}
+            {activeTab === 'organization' && <OrganizationProfile showToast={showToast} />}
             {activeTab === 'integrations' && <IntegrationsModule />}
             {activeTab === 'inventory' && <InventoryManager inventory={inventory} outlets={outlets} showToast={showToast} parties={parties} />}
             {activeTab === 'billing' && <BillingSales inventory={inventory} showToast={showToast} parties={parties} invoices={invoices} />}
@@ -1174,6 +1419,9 @@ const InaraApp = () => {
             {activeTab === 'reports' && <ReportsModule invoices={invoices} expenses={expenses} />}
           </motion.div>
         </AnimatePresence>
+
+        {/* AI Assistant - Always visible */}
+        <AIAssistant inventory={inventory} invoices={invoices} expenses={expenses} />
       </main>
 
       <GlobalSearch
