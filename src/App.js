@@ -15,7 +15,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import {
   getFirestore, collection, addDoc, query, onSnapshot, deleteDoc, doc,
-  serverTimestamp, writeBatch, orderBy
+  serverTimestamp, writeBatch, orderBy, getDocs, updateDoc
 } from "firebase/firestore";
 
 // --- CONFIGURATION ---
@@ -1289,7 +1289,147 @@ const EnhancedPartiesModule = ({ showToast }) => {
   );
 };
 
-// --- 12. AI ASSISTANT ---
+// --- 13. RECURRING INVOICES MODULE ---
+const RecurringInvoicesModule = ({ inventory, parties, showToast }) => {
+  const [recurring, setRecurring] = useState([]);
+  const [newRecurring, setNewRecurring] = useState({ customerName: '', frequency: 'Monthly', items: [], nextDate: '', active: true });
+  const [cart, setCart] = useState([]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'recurring_invoices'), s => setRecurring(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    return unsub;
+  }, []);
+
+  const handleCreate = async () => {
+    if (!newRecurring.customerName || cart.length === 0) return showToast('Add customer and items', 'error');
+    const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'recurring_invoices'), {
+      ...newRecurring, items: cart, total, createdAt: serverTimestamp()
+    });
+    showToast('Recurring invoice created');
+    setCart([]);
+    setNewRecurring({ customerName: '', frequency: 'Monthly', items: [], nextDate: '', active: true });
+  };
+
+  const toggleStatus = async (id, currentStatus) => {
+    await updateDoc(doc(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'recurring_invoices', id), { active: !currentStatus });
+    showToast(currentStatus ? 'Paused' : 'Activated');
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div><h2 className="text-2xl font-bold text-gray-800 dark:text-white">Recurring Invoices</h2><p className="text-sm text-gray-500">Automated subscription billing</p></div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="lg:col-span-2 p-6">
+          <h3 className="font-bold mb-4">Create Recurring Invoice</h3>
+          <div className="space-y-4">
+            <input placeholder="Customer Name" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newRecurring.customerName} onChange={e => setNewRecurring({ ...newRecurring, customerName: e.target.value })} />
+            <select className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newRecurring.frequency} onChange={e => setNewRecurring({ ...newRecurring, frequency: e.target.value })}>
+              <option>Daily</option><option>Weekly</option><option>Monthly</option><option>Quarterly</option><option>Yearly</option>
+            </select>
+            <input type="date" placeholder="Next Invoice Date" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newRecurring.nextDate} onChange={e => setNewRecurring({ ...newRecurring, nextDate: e.target.value })} />
+            <div className="border rounded-xl p-4 max-h-48 overflow-y-auto">
+              <h4 className="font-bold mb-2 text-sm">Select Products</h4>
+              {inventory.slice(0, 10).map(item => (
+                <div key={item.id} className="flex justify-between p-2 hover:bg-gray-50 dark:hover:bg-slate-800 rounded">
+                  <span className="text-sm">{item.name}</span>
+                  <button onClick={() => setCart([...cart, { ...item, qty: 1 }])} className="text-xs bg-purple-600 text-white px-2 py-1 rounded">Add</button>
+                </div>
+              ))}
+            </div>
+            <Button onClick={handleCreate} className="w-full">Create Recurring Invoice</Button>
+          </div>
+        </Card>
+        <Card className="p-6">
+          <h3 className="font-bold mb-4">Active Subscriptions</h3>
+          <div className="space-y-2">
+            {recurring.map(r => (
+              <div key={r.id} className="p-3 border rounded-xl dark:border-slate-700">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-bold text-sm">{r.customerName}</h4>
+                    <p className="text-xs text-gray-500">{r.frequency} • ₹{r.total}</p>
+                  </div>
+                  <button onClick={() => toggleStatus(r.id, r.active)} className={`text-xs px-2 py-1 rounded ${r.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                    {r.active ? 'Active' : 'Paused'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+};
+
+// --- 14. DATA IMPORT/EXPORT MODULE ---
+const DataImportExport = ({ showToast }) => {
+  const [importType, setImportType] = useState('customers');
+
+  const handleExport = async (type) => {
+    const snapshot = await getDocs(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, type));
+    const data = snapshot.docs.map(d => d.data());
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, type);
+    XLSX.writeFile(wb, `${type}_export_${Date.now()}.xlsx`);
+    showToast(`Exported ${data.length} ${type}`);
+  };
+
+  const handleImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet);
+
+      const batch = writeBatch(db);
+      json.forEach(row => {
+        const ref = doc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, importType));
+        batch.set(ref, { ...row, createdAt: serverTimestamp() });
+      });
+      await batch.commit();
+      showToast(`Imported ${json.length} ${importType}`);
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Data Import/Export</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card className="p-6">
+          <h3 className="font-bold mb-4">Import Data</h3>
+          <select className="w-full p-3 border rounded-xl mb-4 dark:bg-slate-800" value={importType} onChange={e => setImportType(e.target.value)}>
+            <option value="parties">Customers/Vendors</option>
+            <option value="inventory">Inventory Items</option>
+            <option value="expenses">Expenses</option>
+          </select>
+          <input type="file" accept=".xlsx,.csv" onChange={handleImport} className="w-full p-3 border rounded-xl dark:bg-slate-800" />
+          <p className="text-xs text-gray-500 mt-2">Upload Excel (.xlsx) or CSV file</p>
+        </Card>
+        <Card className="p-6">
+          <h3 className="font-bold mb-4">Export Data</h3>
+          <div className="space-y-2">
+            {['parties', 'inventory', 'invoices', 'expenses', 'estimates'].map(type => (
+              <Button key={type} onClick={() => handleExport(type)} variant="secondary" className="w-full">
+                Export {type.charAt(0).toUpperCase() + type.slice(1)}
+              </Button>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+};
+
+// --- 15. AI ASSISTANT ---
 const AIAssistant = ({ inventory, invoices, expenses }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -1553,9 +1693,11 @@ const InaraApp = () => {
             { id: 'billing', icon: ShoppingCart, label: 'Terminal / POS' },
             { id: 'inventory', icon: Package, label: 'Inventory' },
             { id: 'pricelists', icon: Layers, label: 'Price Lists', admin: true },
+            { id: 'recurring', icon: RefreshCw, label: 'Recurring Invoices', admin: true },
             { id: 'procurement', icon: Truck, label: 'Procurement' },
             { id: 'expenses', icon: DollarSign, label: 'Finance' },
             { id: 'reports', icon: FileText, label: 'Reports' },
+            { id: 'import-export', icon: Upload, label: 'Import/Export', admin: true },
             { id: 'parties', icon: Store, label: 'Parties & Outlets', admin: true },
             { id: 'organization', icon: Building2, label: 'Organization', admin: true },
             { id: 'integrations', icon: Link, label: 'Integrations', admin: true },
@@ -1589,6 +1731,8 @@ const InaraApp = () => {
             {activeTab === 'estimates' && <EstimatesModule inventory={inventory} parties={parties} showToast={showToast} />}
             {activeTab === 'procurement' && <ProcurementModule inventory={inventory} parties={parties} showToast={showToast} />}
             {activeTab === 'pricelists' && <PriceListsModule inventory={inventory} showToast={showToast} />}
+            {activeTab === 'recurring' && <RecurringInvoicesModule inventory={inventory} parties={parties} showToast={showToast} />}
+            {activeTab === 'import-export' && <DataImportExport showToast={showToast} />}
             {activeTab === 'team' && <UserSettings appId={APP_ID} />}
             {activeTab === 'parties' && <EnhancedPartiesModule showToast={showToast} />}
             {activeTab === 'organization' && <OrganizationProfile showToast={showToast} />}
