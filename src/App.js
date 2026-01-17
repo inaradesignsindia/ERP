@@ -15,7 +15,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import {
   getFirestore, collection, addDoc, query, onSnapshot, deleteDoc, doc,
-  serverTimestamp, writeBatch, orderBy, getDocs, updateDoc
+  serverTimestamp, writeBatch, orderBy, getDocs, updateDoc, setDoc
 } from "firebase/firestore";
 
 // --- CONFIGURATION ---
@@ -1537,32 +1537,210 @@ Answer questions about sales, inventory, expenses, and provide business insights
   );
 };
 
-// --- 9. EXTRAS ---
-const IntegrationsModule = () => (
-  <div className="space-y-6">
-    <h2 className="text-2xl font-bold text-gray-800">Integrations</h2>
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      {[{ name: 'Instagram Shop', icon: Instagram, color: 'text-pink-600', status: 'Connect' }, { name: 'Facebook Business', icon: Facebook, color: 'text-blue-600', status: 'Connect' }, { name: 'Shopify', icon: ShoppingCart, color: 'text-green-600', status: 'Coming Soon' }].map((tool, i) => (
-        <Card key={i} className="text-center p-8 hover:shadow-2xl transition-all"><tool.icon size={56} className={`mx-auto mb-4 ${tool.color}`} /><h3 className="font-bold text-lg text-gray-800">{tool.name}</h3><Button variant="secondary" className="w-full mt-6 rounded-full">Connect</Button></Card>
-      ))}
-    </div>
-  </div>
-);
-
-const UserSettings = ({ appId }) => {
+// --- 16. COMPREHENSIVE SETTINGS MODULE ---
+const SettingsModule = ({ appId, showToast }) => {
+  const [activeSection, setActiveSection] = useState('organization');
   const [team, setTeam] = useState([]);
   const [newMember, setNewMember] = useState({ name: '', role: 'Worker', userId: '', password: '' });
-  useEffect(() => onSnapshot(collection(db, 'artifacts', appId, 'users', COMPANY_ID, 'team'), s => setTeam(s.docs.map(d => ({ id: d.id, ...d.data() })))), [appId]);
-  const handleAdd = async (e) => { e.preventDefault(); await addDoc(collection(db, 'artifacts', appId, 'users', COMPANY_ID, 'team'), { ...newMember, createdAt: serverTimestamp() }); setNewMember({ name: '', role: 'Worker', userId: '', password: '' }); };
+  const [profile, setProfile] = useState({ companyName: 'INARA Designs', address: '', taxId: '', email: '', phone: '', logo: '', fiscalYear: 'January-December', dateFormat: 'DD/MM/YYYY', currency: 'INR' });
+  const [invoicePrefs, setInvoicePrefs] = useState({ prefix: 'INV', autoNumber: true, showQR: false, hideZeroItems: false, termsConditions: '', customerNotes: '' });
+  const [emailPrefs, setEmailPrefs] = useState({ fromName: 'INARA ERP', fromEmail: '', replyTo: '', enableReminders: true, reminderDays: 3 });
+
+  useEffect(() => {
+    const unsubTeam = onSnapshot(collection(db, 'artifacts', appId, 'users', COMPANY_ID, 'team'), s => setTeam(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubSettings = onSnapshot(collection(db, 'artifacts', appId, 'users', COMPANY_ID, 'settings'), s => {
+      if (s.docs.length > 0) setProfile(prev => ({ ...prev, ...s.docs[0].data() }));
+    });
+    const unsubInvoicePrefs = onSnapshot(collection(db, 'artifacts', appId, 'users', COMPANY_ID, 'invoice_preferences'), s => {
+      if (s.docs.length > 0) setInvoicePrefs(prev => ({ ...prev, ...s.docs[0].data() }));
+    });
+    const unsubEmailPrefs = onSnapshot(collection(db, 'artifacts', appId, 'users', COMPANY_ID, 'email_preferences'), s => {
+      if (s.docs.length > 0) setEmailPrefs(prev => ({ ...prev, ...s.docs[0].data() }));
+    });
+    return () => { unsubTeam(); unsubSettings(); unsubInvoicePrefs(); unsubEmailPrefs(); };
+  }, [appId]);
+
+  const addMember = async (e) => {
+    e.preventDefault();
+    await addDoc(collection(db, 'artifacts', appId, 'users', COMPANY_ID, 'team'), { ...newMember, createdAt: serverTimestamp() });
+    showToast('Team member added');
+    setNewMember({ name: '', role: 'Worker', userId: '', password: '' });
+  };
+
+  const deleteMember = async (id) => {
+    if (window.confirm('Remove team member?')) {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', COMPANY_ID, 'team', id));
+      showToast('Member removed');
+    }
+  };
+
+  const saveProfile = async () => {
+    const settingsRef = doc(db, 'artifacts', appId, 'users', COMPANY_ID, 'settings', 'profile');
+    await setDoc(settingsRef, { ...profile, updatedAt: serverTimestamp() }, { merge: true });
+    showToast('Organization profile saved');
+  };
+
+  const saveInvoicePrefs = async () => {
+    const invoicePrefsRef = doc(db, 'artifacts', appId, 'users', COMPANY_ID, 'invoice_preferences', 'prefs');
+    await setDoc(invoicePrefsRef, { ...invoicePrefs, updatedAt: serverTimestamp() }, { merge: true });
+    showToast('Invoice preferences saved');
+  };
+
+  const saveEmailPrefs = async () => {
+    const emailPrefsRef = doc(db, 'artifacts', appId, 'users', COMPANY_ID, 'email_preferences', 'prefs');
+    await setDoc(emailPrefsRef, { ...emailPrefs, updatedAt: serverTimestamp() }, { merge: true });
+    showToast('Email preferences saved');
+  };
+
+  const sections = [
+    { id: 'organization', label: 'Organization Profile', icon: Building2 },
+    { id: 'invoice', label: 'Invoice Preferences', icon: FileText },
+    { id: 'email', label: 'Email Settings', icon: Mail },
+    { id: 'users', label: 'Users & Roles', icon: Users },
+    { id: 'integrations', label: 'Integrations', icon: Link },
+    { id: 'security', label: 'Privacy & Security', icon: Lock },
+  ];
+
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-800">User Settings</h2>
-      <Card><form onSubmit={handleAdd} className="flex gap-3"><input placeholder="Name" className="p-3 border rounded-xl bg-gray-50" required value={newMember.name} onChange={e => setNewMember({ ...newMember, name: e.target.value })} /><input placeholder="User ID" className="p-3 border rounded-xl bg-gray-50" required value={newMember.userId} onChange={e => setNewMember({ ...newMember, userId: e.target.value })} /><input placeholder="Password" type="password" className="p-3 border rounded-xl bg-gray-50" required value={newMember.password} onChange={e => setNewMember({ ...newMember, password: e.target.value })} /><select className="p-3 border rounded-xl bg-gray-50" value={newMember.role} onChange={e => setNewMember({ ...newMember, role: e.target.value })}><option>Worker</option><option>Admin</option></select><Button>Add</Button></form></Card>
-      <div className="grid gap-4 md:grid-cols-3">{team.map(m => <Card key={m.id} className="flex items-center gap-4"><div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center font-bold text-purple-700 text-xl">{m.name[0]}</div><div><h3 className="font-bold text-gray-800">{m.name}</h3><p className="text-sm text-gray-500">@{m.userId} • {m.role}</p></div></Card>)}</div>
+      <div className="flex items-center gap-3">
+        <Settings size={32} className="text-purple-600" />
+        <div><h2 className="text-2xl font-bold text-gray-800 dark:text-white">Settings</h2><p className="text-sm text-gray-500">Configure your ERP system</p></div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Sidebar Navigation */}
+        <Card className="p-4">
+          <nav className="space-y-1">
+            {sections.map(section => (
+              <button key={section.id} onClick={() => setActiveSection(section.id)} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${activeSection === section.id ? 'bg-purple-600 text-white' : 'hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-700 dark:text-gray-300'}`}>
+                <section.icon size={20} />
+                <span className="text-sm font-medium">{section.label}</span>
+              </button>
+            ))}
+          </nav>
+        </Card>
+
+        {/* Content Area */}
+        <Card className="lg:col-span-3 p-6">
+          {activeSection === 'organization' && (
+            <div className="space-y-4">
+              <h3 className="font-bold text-lg mb-4">Organization Profile</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><label className="text-xs font-bold text-gray-500 mb-1 block">Company Name</label><input className="w-full p-3 border rounded-xl dark:bg-slate-800" value={profile.companyName} onChange={e => setProfile({ ...profile, companyName: e.target.value })} /></div>
+                <div><label className="text-xs font-bold text-gray-500 mb-1 block">Tax ID / GST Number</label><input className="w-full p-3 border rounded-xl dark:bg-slate-800" value={profile.taxId} onChange={e => setProfile({ ...profile, taxId: e.target.value })} /></div>
+                <div className="md:col-span-2"><label className="text-xs font-bold text-gray-500 mb-1 block">Address</label><textarea className="w-full p-3 border rounded-xl dark:bg-slate-800" rows="3" value={profile.address} onChange={e => setProfile({ ...profile, address: e.target.value })} /></div>
+                <div><label className="text-xs font-bold text-gray-500 mb-1 block">Email</label><input type="email" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={profile.email} onChange={e => setProfile({ ...profile, email: e.target.value })} /></div>
+                <div><label className="text-xs font-bold text-gray-500 mb-1 block">Phone</label><input className="w-full p-3 border rounded-xl dark:bg-slate-800" value={profile.phone} onChange={e => setProfile({ ...profile, phone: e.target.value })} /></div>
+                <div><label className="text-xs font-bold text-gray-500 mb-1 block">Fiscal Year</label><select className="w-full p-3 border rounded-xl dark:bg-slate-800" value={profile.fiscalYear} onChange={e => setProfile({ ...profile, fiscalYear: e.target.value })}><option>January-December</option><option>April-March</option></select></div>
+                <div><label className="text-xs font-bold text-gray-500 mb-1 block">Date Format</label><select className="w-full p-3 border rounded-xl dark:bg-slate-800" value={profile.dateFormat} onChange={e => setProfile({ ...profile, dateFormat: e.target.value })}><option>DD/MM/YYYY</option><option>MM/DD/YYYY</option><option>YYYY-MM-DD</option></select></div>
+                <div className="md:col-span-2"><label className="text-xs font-bold text-gray-500 mb-1 block">Company Logo URL</label><input className="w-full p-3 border rounded-xl dark:bg-slate-800" placeholder="https://..." value={profile.logo} onChange={e => setProfile({ ...profile, logo: e.target.value })} /></div>
+              </div>
+              <Button onClick={saveProfile} className="mt-4">Save Organization Profile</Button>
+            </div>
+          )}
+
+          {activeSection === 'invoice' && (
+            <div className="space-y-4">
+              <h3 className="font-bold text-lg mb-4">Invoice Preferences</h3>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="text-xs font-bold text-gray-500 mb-1 block">Invoice Prefix</label><input className="w-full p-3 border rounded-xl dark:bg-slate-800" value={invoicePrefs.prefix} onChange={e => setInvoicePrefs({ ...invoicePrefs, prefix: e.target.value })} /></div>
+                  <div className="flex items-center gap-2 pt-6"><input type="checkbox" checked={invoicePrefs.autoNumber} onChange={e => setInvoicePrefs({ ...invoicePrefs, autoNumber: e.target.checked })} /><label className="text-sm">Auto-generate invoice numbers</label></div>
+                </div>
+                <div className="flex items-center gap-2"><input type="checkbox" checked={invoicePrefs.showQR} onChange={e => setInvoicePrefs({ ...invoicePrefs, showQR: e.target.checked })} /><label className="text-sm">Display QR code on invoice PDFs</label></div>
+                <div className="flex items-center gap-2"><input type="checkbox" checked={invoicePrefs.hideZeroItems} onChange={e => setInvoicePrefs({ ...invoicePrefs, hideZeroItems: e.target.checked })} /><label className="text-sm">Hide zero-value line items</label></div>
+                <div><label className="text-xs font-bold text-gray-500 mb-1 block">Terms & Conditions</label><textarea className="w-full p-3 border rounded-xl dark:bg-slate-800" rows="3" placeholder="Payment due within 30 days..." value={invoicePrefs.termsConditions} onChange={e => setInvoicePrefs({ ...invoicePrefs, termsConditions: e.target.value })} /></div>
+                <div><label className="text-xs font-bold text-gray-500 mb-1 block">Customer Notes</label><textarea className="w-full p-3 border rounded-xl dark:bg-slate-800" rows="2" placeholder="Thank you for your business!" value={invoicePrefs.customerNotes} onChange={e => setInvoicePrefs({ ...invoicePrefs, customerNotes: e.target.value })} /></div>
+              </div>
+              <Button onClick={saveInvoicePrefs} className="mt-4">Save Invoice Preferences</Button>
+            </div>
+          )}
+
+          {activeSection === 'email' && (
+            <div className="space-y-4">
+              <h3 className="font-bold text-lg mb-4">Email Settings</h3>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="text-xs font-bold text-gray-500 mb-1 block">From Name</label><input className="w-full p-3 border rounded-xl dark:bg-slate-800" value={emailPrefs.fromName} onChange={e => setEmailPrefs({ ...emailPrefs, fromName: e.target.value })} /></div>
+                  <div><label className="text-xs font-bold text-gray-500 mb-1 block">From Email</label><input type="email" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={emailPrefs.fromEmail} onChange={e => setEmailPrefs({ ...emailPrefs, fromEmail: e.target.value })} /></div>
+                </div>
+                <div><label className="text-xs font-bold text-gray-500 mb-1 block">Reply-To Email</label><input type="email" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={emailPrefs.replyTo} onChange={e => setEmailPrefs({ ...emailPrefs, replyTo: e.target.value })} /></div>
+                <div className="flex items-center gap-2"><input type="checkbox" checked={emailPrefs.enableReminders} onChange={e => setEmailPrefs({ ...emailPrefs, enableReminders: e.target.checked })} /><label className="text-sm">Enable automatic payment reminders</label></div>
+                <div><label className="text-xs font-bold text-gray-500 mb-1 block">Send reminder after (days)</label><input type="number" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={emailPrefs.reminderDays} onChange={e => setEmailPrefs({ ...emailPrefs, reminderDays: parseInt(e.target.value) })} /></div>
+              </div>
+              <Button onClick={saveEmailPrefs} className="mt-4">Save Email Settings</Button>
+            </div>
+          )}
+
+          {activeSection === 'users' && (
+            <div className="space-y-4">
+              <h3 className="font-bold text-lg mb-4">Users & Roles</h3>
+              <Card className="p-4 bg-gray-50 dark:bg-slate-800">
+                <h4 className="font-bold mb-3">Add Team Member</h4>
+                <form onSubmit={addMember} className="grid grid-cols-2 gap-3">
+                  <input placeholder="Name" className="p-2 border rounded-lg dark:bg-slate-700" required value={newMember.name} onChange={e => setNewMember({ ...newMember, name: e.target.value })} />
+                  <select className="p-2 border rounded-lg dark:bg-slate-700" value={newMember.role} onChange={e => setNewMember({ ...newMember, role: e.target.value })}><option>Worker</option><option>Manager</option><option>Admin</option></select>
+                  <input placeholder="User ID" className="p-2 border rounded-lg dark:bg-slate-700" required value={newMember.userId} onChange={e => setNewMember({ ...newMember, userId: e.target.value })} />
+                  <input type="password" placeholder="Password" className="p-2 border rounded-lg dark:bg-slate-700" required value={newMember.password} onChange={e => setNewMember({ ...newMember, password: e.target.value })} />
+                  <Button type="submit" className="col-span-2">Add Member</Button>
+                </form>
+              </Card>
+              <div className="space-y-2">
+                {team.map(member => (
+                  <div key={member.id} className="flex justify-between items-center p-3 border rounded-xl dark:border-slate-700">
+                    <div><h4 className="font-bold">{member.name}</h4><p className="text-xs text-gray-500">{member.role} • {member.userId}</p></div>
+                    <button onClick={() => deleteMember(member.id)} className="text-rose-600 hover:bg-rose-50 p-2 rounded"><Trash2 size={16} /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'integrations' && (
+            <div className="space-y-4">
+              <h3 className="font-bold text-lg mb-4">Integrations</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[{ name: 'Instagram Shop', icon: Instagram, color: 'text-pink-600' }, { name: 'Facebook Business', icon: Facebook, color: 'text-blue-600' }, { name: 'Shopify', icon: ShoppingCart, color: 'text-green-600' }, { name: 'Payment Gateway', icon: CreditCard, color: 'text-purple-600' }].map((tool, i) => (
+                  <Card key={i} className="p-6 text-center hover:shadow-lg transition-all">
+                    <tool.icon size={48} className={`mx-auto mb-3 ${tool.color}`} />
+                    <h4 className="font-bold text-sm mb-2">{tool.name}</h4>
+                    <Button variant="secondary" className="w-full text-xs">Connect</Button>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'security' && (
+            <div className="space-y-4">
+              <h3 className="font-bold text-lg mb-4">Privacy & Security</h3>
+              <div className="space-y-4">
+                <div className="p-4 border rounded-xl dark:border-slate-700">
+                  <h4 className="font-bold mb-2">Two-Factor Authentication</h4>
+                  <p className="text-sm text-gray-500 mb-3">Add an extra layer of security to your account</p>
+                  <Button variant="secondary">Enable 2FA</Button>
+                </div>
+                <div className="p-4 border rounded-xl dark:border-slate-700">
+                  <h4 className="font-bold mb-2">Data Backup</h4>
+                  <p className="text-sm text-gray-500 mb-3">Download a complete backup of your data</p>
+                  <Button variant="secondary">Download Backup</Button>
+                </div>
+                <div className="p-4 border rounded-xl dark:border-slate-700">
+                  <h4 className="font-bold mb-2">Session Management</h4>
+                  <p className="text-sm text-gray-500 mb-3">View and manage active sessions</p>
+                  <Button variant="secondary">Manage Sessions</Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 };
 
+// --- 17. REPORTS MODULE ---
 const ReportsModule = ({ invoices, expenses }) => {
   const exportExcel = () => {
     const ws = XLSX.utils.json_to_sheet(invoices);
@@ -1672,6 +1850,7 @@ const InaraApp = () => {
       <div className="md:hidden bg-purple-900 text-white p-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
         <span className="font-bold text-lg tracking-wide italic">INARA ERP</span>
         <div className="flex items-center gap-4">
+          <button onClick={() => setActiveTab('settings')} className="p-2 hover:bg-white/10 rounded-lg"><Settings size={20} /></button>
           <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 hover:bg-white/10 rounded-lg">{isDarkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
           <button onClick={() => setIsMenuOpen(!isMenuOpen)}><Menu /></button>
         </div>
@@ -1699,9 +1878,6 @@ const InaraApp = () => {
             { id: 'reports', icon: FileText, label: 'Reports' },
             { id: 'import-export', icon: Upload, label: 'Import/Export', admin: true },
             { id: 'parties', icon: Store, label: 'Parties & Outlets', admin: true },
-            { id: 'organization', icon: Building2, label: 'Organization', admin: true },
-            { id: 'integrations', icon: Link, label: 'Integrations', admin: true },
-            { id: 'team', icon: Settings, label: 'User Settings', admin: true },
           ].map(i => (!i.admin || currentUser.role !== 'Worker') && (
             <button key={i.id} onClick={() => { setActiveTab(i.id); setIsMenuOpen(false) }} className={`w-full flex items-center gap-4 p-3.5 rounded-xl transition-all font-medium ${activeTab === i.id ? 'bg-purple-50 text-purple-700 shadow-sm dark:bg-purple-900/40 dark:text-purple-300' : 'text-gray-500 hover:bg-purple-50 hover:text-purple-600 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-purple-300'}`}><i.icon size={20} />{i.label}</button>
           ))}
@@ -1713,7 +1889,10 @@ const InaraApp = () => {
               <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center font-bold text-purple-700 dark:text-purple-300">{currentUser.name[0]}</div>
               <div className="max-w-[120px]"><div className="font-bold text-sm text-gray-800 dark:text-gray-200 truncate">{currentUser.name}</div><div className="text-[10px] text-gray-400 capitalize">{currentUser.role}</div></div>
             </div>
-            <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 text-gray-400 hover:bg-purple-50 dark:hover:bg-white/5 rounded-xl transition-all">{isDarkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
+            <div className="flex gap-1">
+              <button onClick={() => setActiveTab('settings')} className="p-2 text-gray-400 hover:bg-purple-50 dark:hover:bg-white/5 rounded-xl transition-all" title="Settings"><Settings size={18} /></button>
+              <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 text-gray-400 hover:bg-purple-50 dark:hover:bg-white/5 rounded-xl transition-all">{isDarkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1728,15 +1907,13 @@ const InaraApp = () => {
             transition={{ duration: 0.3 }}
           >
             {activeTab === 'dashboard' && <Dashboard inventory={inventory} invoices={invoices} expenses={expenses} currentUser={currentUser} showToast={showToast} />}
+            {activeTab === 'settings' && <SettingsModule appId={APP_ID} showToast={showToast} />}
             {activeTab === 'estimates' && <EstimatesModule inventory={inventory} parties={parties} showToast={showToast} />}
             {activeTab === 'procurement' && <ProcurementModule inventory={inventory} parties={parties} showToast={showToast} />}
             {activeTab === 'pricelists' && <PriceListsModule inventory={inventory} showToast={showToast} />}
             {activeTab === 'recurring' && <RecurringInvoicesModule inventory={inventory} parties={parties} showToast={showToast} />}
             {activeTab === 'import-export' && <DataImportExport showToast={showToast} />}
-            {activeTab === 'team' && <UserSettings appId={APP_ID} />}
             {activeTab === 'parties' && <EnhancedPartiesModule showToast={showToast} />}
-            {activeTab === 'organization' && <OrganizationProfile showToast={showToast} />}
-            {activeTab === 'integrations' && <IntegrationsModule />}
             {activeTab === 'inventory' && <InventoryManager inventory={inventory} outlets={outlets} showToast={showToast} parties={parties} />}
             {activeTab === 'billing' && <BillingSales inventory={inventory} showToast={showToast} parties={parties} invoices={invoices} />}
             {activeTab === 'expenses' && <ExpenseManager expenses={expenses} outlets={outlets} parties={parties} showToast={showToast} />}
