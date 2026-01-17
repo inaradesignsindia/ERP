@@ -1804,9 +1804,15 @@ const InaraApp = () => {
     if (team.length === 0) {
       const admin = { name: "Owner", role: "Owner", userId: loginId.toLowerCase(), password: loginPass, createdAt: serverTimestamp() };
       await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'team'), admin);
-      setCurrentUser(admin); return;
+      setCurrentUser(admin);
+      showToast('Welcome! Account created successfully');
+      return;
     }
     const member = team.find(m => m.userId === loginId.toLowerCase() && m.password === loginPass);
+    if (!member) {
+      showToast('Invalid credentials. Please try again.', 'error');
+      return;
+    }
     sessionStorage.setItem('current_user', JSON.stringify(member));
     showToast(`Welcome back, ${member.name}`);
     setCurrentUser(member);
