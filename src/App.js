@@ -798,7 +798,7 @@ const ProcurementModule = ({ inventory, showToast, parties }) => {
 // --- 4. BILLING & SALES ---
 const BillingSales = ({ inventory, showToast, parties, invoices }) => {
   const [cart, setCart] = useState([]);
-  const [meta, setMeta] = useState({ customerName: '', channel: 'Store', returnReason: '', customerId: '', billNumber: '' });
+  const [meta, setMeta] = useState({ customerName: '', channel: 'Store', returnReason: '', customerId: '', billNumber: '', invoiceStatus: 'Paid' });
   const [isReturnMode, setIsReturnMode] = useState(false);
   const [search, setSearch] = useState("");
   const [valBill, setValBill] = useState("");
@@ -815,7 +815,7 @@ const BillingSales = ({ inventory, showToast, parties, invoices }) => {
 
     await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'invoices'), {
       ...meta, billNumber: billNum, items: cart, subtotal, tax, total,
-      date: new Date().toISOString(), status: 'Paid', isReturn: isReturnMode
+      date: new Date().toISOString(), status: meta.invoiceStatus || 'Paid', isReturn: isReturnMode
     });
 
     if (meta.customerId) {
@@ -1111,7 +1111,185 @@ const OrganizationProfile = ({ showToast }) => {
   );
 };
 
-// --- 8. AI ASSISTANT ---
+// --- 9. PRICE LISTS MODULE ---
+const PriceListsModule = ({ inventory, showToast }) => {
+  const [priceLists, setPriceLists] = useState([]);
+  const [newList, setNewList] = useState({ name: '', description: '', items: [] });
+  const [selectedItems, setSelectedItems] = useState([]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'pricelists'), s => setPriceLists(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    return unsub;
+  }, []);
+
+  const handleCreatePriceList = async () => {
+    if (!newList.name) return showToast('Enter price list name', 'error');
+    await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'pricelists'), {
+      ...newList, items: selectedItems, createdAt: serverTimestamp()
+    });
+    showToast('Price list created');
+    setNewList({ name: '', description: '', items: [] });
+    setSelectedItems([]);
+  };
+
+  const toggleItem = (item) => {
+    const exists = selectedItems.find(i => i.id === item.id);
+    if (exists) {
+      setSelectedItems(selectedItems.filter(i => i.id !== item.id));
+    } else {
+      setSelectedItems([...selectedItems, { id: item.id, name: item.name, customPrice: item.price }]);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div><h2 className="text-2xl font-bold text-gray-800 dark:text-white">Price Lists</h2><p className="text-sm text-gray-500">Multi-tier pricing for customer groups</p></div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="lg:col-span-2 p-6">
+          <h3 className="font-bold mb-4">Create New Price List</h3>
+          <div className="space-y-4">
+            <input type="text" placeholder="Price List Name (e.g., Wholesale, Retail)" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newList.name} onChange={e => setNewList({ ...newList, name: e.target.value })} />
+            <textarea placeholder="Description" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newList.description} onChange={e => setNewList({ ...newList, description: e.target.value })} />
+            <div className="border rounded-xl p-4 max-h-64 overflow-y-auto">
+              <h4 className="font-bold mb-2 text-sm">Select Products</h4>
+              {inventory.map(item => (
+                <div key={item.id} className="flex items-center justify-between p-2 hover:bg-gray-50 dark:hover:bg-slate-800 rounded">
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" checked={selectedItems.some(i => i.id === item.id)} onChange={() => toggleItem(item)} />
+                    <span className="text-sm">{item.name}</span>
+                  </div>
+                  {selectedItems.some(i => i.id === item.id) && (
+                    <input type="number" placeholder="Custom Price" className="w-24 p-1 border rounded text-sm dark:bg-slate-700" value={selectedItems.find(i => i.id === item.id)?.customPrice || item.price} onChange={e => setSelectedItems(selectedItems.map(i => i.id === item.id ? { ...i, customPrice: parseFloat(e.target.value) } : i))} />
+                  )}
+                </div>
+              ))}
+            </div>
+            <Button onClick={handleCreatePriceList} className="w-full">Create Price List</Button>
+          </div>
+        </Card>
+        <Card className="p-6">
+          <h3 className="font-bold mb-4">Existing Price Lists</h3>
+          <div className="space-y-2">
+            {priceLists.map(list => (
+              <div key={list.id} className="p-3 border rounded-xl dark:border-slate-700">
+                <h4 className="font-bold text-sm">{list.name}</h4>
+                <p className="text-xs text-gray-500">{list.items?.length || 0} items</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+};
+
+// --- 10. QUICK CREATE FAB ---
+const QuickCreateFAB = ({ onAction }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const actions = [
+    { id: 'invoice', label: 'New Invoice', icon: FileText, color: 'bg-blue-600' },
+    { id: 'estimate', label: 'New Estimate', icon: FileCheck, color: 'bg-purple-600' },
+    { id: 'expense', label: 'New Expense', icon: DollarSign, color: 'bg-rose-600' },
+  ];
+
+  return (
+    <div className="fixed bottom-24 left-6 z-40">
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="space-y-2 mb-4">
+            {actions.map((action, idx) => (
+              <motion.button key={action.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.1 }} onClick={() => { onAction(action.id); setIsOpen(false); }} className={`${action.color} text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 hover:scale-105 transition-transform`}>
+                <action.icon size={20} />
+                <span className="text-sm font-bold">{action.label}</span>
+              </motion.button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <motion.button onClick={() => setIsOpen(!isOpen)} className="w-14 h-14 bg-gradient-to-r from-blue-600 to-blue-800 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
+        {isOpen ? <X size={24} /> : <Plus size={24} />}
+      </motion.button>
+    </div>
+  );
+};
+
+// --- 11. ENHANCED PARTIES MODULE ---
+const EnhancedPartiesModule = ({ showToast }) => {
+  const [parties, setParties] = useState([]);
+  const [outlets, setOutlets] = useState([]);
+  const [newParty, setNewParty] = useState({ name: '', type: 'Customer', contact: '', email: '', phone: '', website: '', billingAddress: '', shippingAddress: '' });
+  const [newOutlet, setNewOutlet] = useState({ name: '', type: 'Store', address: '', phone: '' });
+
+  useEffect(() => {
+    const unsubParties = onSnapshot(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'parties'), s => setParties(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubOutlets = onSnapshot(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'outlets'), s => setOutlets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    return () => { unsubParties(); unsubOutlets(); };
+  }, []);
+
+  const addParty = async (e) => {
+    e.preventDefault();
+    await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'parties'), { ...newParty, createdAt: serverTimestamp() });
+    showToast(`${newParty.type} added`);
+    setNewParty({ name: '', type: 'Customer', contact: '', email: '', phone: '', website: '', billingAddress: '', shippingAddress: '' });
+  };
+
+  const addOutlet = async (e) => {
+    e.preventDefault();
+    await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'outlets'), { ...newOutlet, createdAt: serverTimestamp() });
+    showToast('Outlet added');
+    setNewOutlet({ name: '', type: 'Store', address: '', phone: '' });
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Parties & Outlets</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="p-6">
+          <h3 className="font-bold mb-4">Add Customer/Vendor</h3>
+          <form onSubmit={addParty} className="space-y-3">
+            <select className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newParty.type} onChange={e => setNewParty({ ...newParty, type: e.target.value })}><option>Customer</option><option>Vendor</option></select>
+            <input placeholder="Name" className="w-full p-3 border rounded-xl dark:bg-slate-800" required value={newParty.name} onChange={e => setNewParty({ ...newParty, name: e.target.value })} />
+            <input placeholder="Contact Person" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newParty.contact} onChange={e => setNewParty({ ...newParty, contact: e.target.value })} />
+            <input type="email" placeholder="Email" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newParty.email} onChange={e => setNewParty({ ...newParty, email: e.target.value })} />
+            <input placeholder="Phone" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newParty.phone} onChange={e => setNewParty({ ...newParty, phone: e.target.value })} />
+            <input placeholder="Website" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newParty.website} onChange={e => setNewParty({ ...newParty, website: e.target.value })} />
+            <textarea placeholder="Billing Address" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newParty.billingAddress} onChange={e => setNewParty({ ...newParty, billingAddress: e.target.value })} />
+            <textarea placeholder="Shipping Address" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newParty.shippingAddress} onChange={e => setNewParty({ ...newParty, shippingAddress: e.target.value })} />
+            <Button type="submit" className="w-full">Add {newParty.type}</Button>
+          </form>
+        </Card>
+        <Card className="p-6">
+          <h3 className="font-bold mb-4">Add Outlet</h3>
+          <form onSubmit={addOutlet} className="space-y-3">
+            <input placeholder="Outlet Name" className="w-full p-3 border rounded-xl dark:bg-slate-800" required value={newOutlet.name} onChange={e => setNewOutlet({ ...newOutlet, name: e.target.value })} />
+            <select className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newOutlet.type} onChange={e => setNewOutlet({ ...newOutlet, type: e.target.value })}><option>Store</option><option>Warehouse</option></select>
+            <textarea placeholder="Address" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newOutlet.address} onChange={e => setNewOutlet({ ...newOutlet, address: e.target.value })} />
+            <input placeholder="Phone" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={newOutlet.phone} onChange={e => setNewOutlet({ ...newOutlet, phone: e.target.value })} />
+            <Button type="submit" className="w-full">Add Outlet</Button>
+          </form>
+        </Card>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {parties.map(p => (
+          <Card key={p.id} className="p-4">
+            <div className="flex justify-between items-start">
+              <div>
+                <h4 className="font-bold">{p.name}</h4>
+                <Badge className={p.type === 'Customer' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}>{p.type}</Badge>
+                {p.email && <p className="text-xs text-gray-500 mt-1">📧 {p.email}</p>}
+                {p.phone && <p className="text-xs text-gray-500">📞 {p.phone}</p>}
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// --- 12. AI ASSISTANT ---
 const AIAssistant = ({ inventory, invoices, expenses }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -1374,6 +1552,7 @@ const InaraApp = () => {
             { id: 'estimates', icon: FileCheck, label: 'Estimates & Quotes' },
             { id: 'billing', icon: ShoppingCart, label: 'Terminal / POS' },
             { id: 'inventory', icon: Package, label: 'Inventory' },
+            { id: 'pricelists', icon: Layers, label: 'Price Lists', admin: true },
             { id: 'procurement', icon: Truck, label: 'Procurement' },
             { id: 'expenses', icon: DollarSign, label: 'Finance' },
             { id: 'reports', icon: FileText, label: 'Reports' },
@@ -1409,8 +1588,9 @@ const InaraApp = () => {
             {activeTab === 'dashboard' && <Dashboard inventory={inventory} invoices={invoices} expenses={expenses} currentUser={currentUser} showToast={showToast} />}
             {activeTab === 'estimates' && <EstimatesModule inventory={inventory} parties={parties} showToast={showToast} />}
             {activeTab === 'procurement' && <ProcurementModule inventory={inventory} parties={parties} showToast={showToast} />}
+            {activeTab === 'pricelists' && <PriceListsModule inventory={inventory} showToast={showToast} />}
             {activeTab === 'team' && <UserSettings appId={APP_ID} />}
-            {activeTab === 'parties' && <PartiesModule />}
+            {activeTab === 'parties' && <EnhancedPartiesModule showToast={showToast} />}
             {activeTab === 'organization' && <OrganizationProfile showToast={showToast} />}
             {activeTab === 'integrations' && <IntegrationsModule />}
             {activeTab === 'inventory' && <InventoryManager inventory={inventory} outlets={outlets} showToast={showToast} parties={parties} />}
@@ -1419,6 +1599,13 @@ const InaraApp = () => {
             {activeTab === 'reports' && <ReportsModule invoices={invoices} expenses={expenses} />}
           </motion.div>
         </AnimatePresence>
+
+        {/* Quick Create FAB */}
+        <QuickCreateFAB onAction={(id) => {
+          if (id === 'invoice') setActiveTab('billing');
+          else if (id === 'estimate') setActiveTab('estimates');
+          else if (id === 'expense') setActiveTab('expenses');
+        }} />
 
         {/* AI Assistant - Always visible */}
         <AIAssistant inventory={inventory} invoices={invoices} expenses={expenses} />
