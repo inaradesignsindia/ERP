@@ -2063,7 +2063,7 @@ const InaraApp = () => {
         <form onSubmit={handleLogin} className="space-y-4">
           <input className="w-full p-4 border rounded-xl bg-gray-50 focus:ring-2 focus:ring-purple-200 outline-none" required value={loginId} onChange={e => setLoginId(e.target.value)} placeholder="User ID" />
           <input type="password" className="w-full p-4 border rounded-xl bg-gray-50 focus:ring-2 focus:ring-purple-200 outline-none" required value={loginPass} onChange={e => setLoginPass(e.target.value)} placeholder="Password" />
-          <Button className="w-full py-4 text-lg bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 shadow-lg">{team.length === 0 ? 'Create Company Account' : 'Login'}</Button>
+          <Button type="submit" className="w-full py-4 text-lg bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 shadow-lg">{team.length === 0 ? 'Create Company Account' : 'Login'}</Button>
         </form>
       </Card>
     </div>
