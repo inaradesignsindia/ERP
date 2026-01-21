@@ -249,10 +249,6 @@ const Toast = ({ message, type = "success", onClose }) => (
   </motion.div>
 );
 
-const Skeleton = ({ className = "" }) => (
-  <div className={`animate-pulse bg-purple-100/50 rounded-xl ${className}`}></div>
-);
-
 const ProgressBar = ({ value, max = 100, color = "bg-purple-600" }) => {
   const percentage = Math.min((value / max) * 100, 100);
   return (
