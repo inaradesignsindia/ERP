@@ -37,7 +37,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 // Initialize Gemini AI
-const genAI = new GoogleGenerativeAI('AIzaSyDGXKBZJPBNqvJGGZCQKJxWJON-Ht5KYxs'); // Replace with your API key
+const genAI = new GoogleGenerativeAI(process.env.REACT_APP_GEMINI_API_KEY || 'AIzaSyDGXKBZJPBNqvJGGZCQKJxWJON-Ht5KYxs'); // Replace with your API key
 const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
 // --- BRANDING ---
@@ -130,19 +130,63 @@ const Badge = ({ children, type = "default" }) => {
   return <span className={`px-3 py-1 rounded-full text-xs font-semibold ${styles[type] || styles.default}`}>{children}</span>;
 };
 
-const Button = ({ children, onClick, variant = "primary", icon: Icon, className = "", disabled = false }) => {
+const Button = ({ children, onClick, variant = "primary", icon: Icon, className = "", disabled = false, type = "button" }) => {
   const variants = {
     primary: `${BRAND.primary} text-white ${BRAND.primaryHover} shadow-lg shadow-purple-600/30`,
-    secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200",
+    secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-gray-200",
     danger: "bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200",
-    ghost: "text-gray-500 hover:bg-gray-100",
+    ghost: "text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-800",
   };
   return (
-    <button onClick={onClick} disabled={disabled} className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold transition-all active:scale-95 disabled:opacity-50 ${variants[variant]} ${className}`}>
+    <button type={type} onClick={onClick} disabled={disabled} className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold transition-all active:scale-95 disabled:opacity-50 ${variants[variant]} ${className}`}>
       {Icon && <Icon size={18} />}{children}
     </button>
   );
 };
+
+// Skeleton Loader Component
+const Skeleton = ({ width = "100%", height = "20px", count = 1, className = "" }) => (
+  <div className={`space-y-2 ${className}`}>
+    {[...Array(count)].map((_, i) => (
+      <div key={i} style={{ width, height }} className="bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+    ))}
+  </div>
+);
+
+// Form Validation Utilities
+const validateForm = (data, rules) => {
+  const errors = {};
+  Object.keys(rules).forEach(field => {
+    const value = data[field];
+    const fieldRules = rules[field];
+
+    if (fieldRules.required && (!value || value.toString().trim() === '')) {
+      errors[field] = `${fieldRules.label || field} is required`;
+    }
+    if (fieldRules.email && value && !/\S+@\S+\.\S+/.test(value)) {
+      errors[field] = 'Invalid email format';
+    }
+    if (fieldRules.min && value && parseFloat(value) < fieldRules.min) {
+      errors[field] = `Must be at least ${fieldRules.min}`;
+    }
+    if (fieldRules.max && value && parseFloat(value) > fieldRules.max) {
+      errors[field] = `Must be at most ${fieldRules.max}`;
+    }
+    if (fieldRules.pattern && value && !fieldRules.pattern.test(value)) {
+      errors[field] = fieldRules.message || 'Invalid format';
+    }
+  });
+  return errors;
+};
+
+// Input with Error Display
+const Input = ({ label, error, ...props }) => (
+  <div className="w-full">
+    {label && <label className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 block">{label}</label>}
+    <input {...props} className={`w-full p-3 border rounded-xl dark:bg-slate-800 dark:text-white ${error ? 'border-rose-500' : 'border-gray-200 dark:border-gray-700'} ${props.className || ''}`} />
+    {error && <p className="text-xs text-rose-600 mt-1">{error}</p>}
+  </div>
+);
 
 const GlobalSearch = ({ isOpen, onClose, inventory, onNavigate }) => {
   const [query, setQuery] = useState("");
@@ -336,40 +380,40 @@ const Dashboard = ({ inventory, invoices, expenses, currentUser, showToast }) =>
             <Card className="p-6 border-l-4 border-amber-500 animate-fade-in delay-100">
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">Receivables (Due)</p>
+                  <p className="text-gray-400 dark:text-gray-300 text-xs font-bold uppercase tracking-wider mb-1">Receivables (Due)</p>
                   <h3 className="text-2xl font-black text-gray-800 dark:text-white">₹{metrics.receivables?.toLocaleString() || '0'}</h3>
-                  <div className="text-[10px] text-amber-600 font-bold mt-1">Pending Payments</div>
+                  <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold mt-1">Pending Payments</div>
                 </div>
-                <div className="p-3 bg-amber-50 rounded-xl"><Coins size={24} className="text-amber-500" /></div>
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl"><Coins size={24} className="text-amber-500" /></div>
               </div>
             </Card>
 
             <Card className="p-6 border-l-4 border-emerald-500 animate-fade-in delay-100">
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">Total Profits</p>
+                  <p className="text-gray-400 dark:text-gray-300 text-xs font-bold uppercase tracking-wider mb-1">Total Profits</p>
                   <h3 className="text-2xl font-black text-gray-800 dark:text-white">₹{metrics.profit.toLocaleString()}</h3>
-                  <div className="text-[10px] text-emerald-600 font-bold mt-1">Net Income</div>
+                  <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">Net Income</div>
                 </div>
-                <div className="p-3 bg-emerald-50 rounded-xl"><Wallet size={24} className="text-emerald-500" /></div>
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl"><Wallet size={24} className="text-emerald-500" /></div>
               </div>
             </Card>
 
             <Card className="p-6 border-l-4 border-blue-500 animate-fade-in delay-200">
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-1">Total Expenses</p>
+                  <p className="text-gray-400 dark:text-gray-300 text-xs font-bold uppercase tracking-wider mb-1">Total Expenses</p>
                   <h3 className="text-2xl font-black text-gray-800 dark:text-white">₹{metrics.expenseTotal.toLocaleString()}</h3>
-                  <div className="text-[10px] text-blue-600 font-bold mt-1">Operating Costs</div>
+                  <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">Operating Costs</div>
                 </div>
-                <div className="p-3 bg-blue-50 rounded-xl"><CreditCard size={24} className="text-blue-500" /></div>
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl"><CreditCard size={24} className="text-blue-500" /></div>
               </div>
             </Card>
-            <Card className="p-6 bg-gradient-to-br from-amber-50 to-white border-amber-100 shadow-sm">
+            <Card className="p-6 bg-gradient-to-br from-amber-50 to-white dark:from-amber-900/20 dark:to-slate-800 border-amber-100 dark:border-amber-800 shadow-sm">
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-gray-500 text-sm font-medium mb-1">Low Stock</p>
-                  <h3 className="text-3xl font-bold text-amber-600">{inventory.filter(i => i.quantity < 5).length}</h3>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm font-medium mb-1">Low Stock</p>
+                  <h3 className="text-3xl font-bold text-amber-600 dark:text-amber-400">{inventory.filter(i => i.quantity < 5).length}</h3>
                 </div>
                 <AlertCircle className="text-amber-400" size={24} />
               </div>
@@ -1545,6 +1589,7 @@ const SettingsModule = ({ appId, showToast }) => {
   const [profile, setProfile] = useState({ companyName: 'INARA Designs', address: '', taxId: '', email: '', phone: '', logo: '', fiscalYear: 'January-December', dateFormat: 'DD/MM/YYYY', currency: 'INR' });
   const [invoicePrefs, setInvoicePrefs] = useState({ prefix: 'INV', autoNumber: true, showQR: false, hideZeroItems: false, termsConditions: '', customerNotes: '' });
   const [emailPrefs, setEmailPrefs] = useState({ fromName: 'INARA ERP', fromEmail: '', replyTo: '', enableReminders: true, reminderDays: 3 });
+  const [inventoryPrefs, setInventoryPrefs] = useState({ lowStockThreshold: parseInt(process.env.REACT_APP_LOW_STOCK_THRESHOLD) || 5, enableLowStockAlerts: process.env.REACT_APP_ENABLE_LOW_STOCK_ALERTS !== 'false' });
 
   useEffect(() => {
     const unsubTeam = onSnapshot(collection(db, 'artifacts', appId, 'users', COMPANY_ID, 'team'), s => setTeam(s.docs.map(d => ({ id: d.id, ...d.data() }))));
@@ -1557,7 +1602,10 @@ const SettingsModule = ({ appId, showToast }) => {
     const unsubEmailPrefs = onSnapshot(collection(db, 'artifacts', appId, 'users', COMPANY_ID, 'email_preferences'), s => {
       if (s.docs.length > 0) setEmailPrefs(prev => ({ ...prev, ...s.docs[0].data() }));
     });
-    return () => { unsubTeam(); unsubSettings(); unsubInvoicePrefs(); unsubEmailPrefs(); };
+    const unsubInventoryPrefs = onSnapshot(collection(db, 'artifacts', appId, 'users', COMPANY_ID, 'inventory_preferences'), s => {
+      if (s.docs.length > 0) setInventoryPrefs(prev => ({ ...prev, ...s.docs[0].data() }));
+    });
+    return () => { unsubTeam(); unsubSettings(); unsubInvoicePrefs(); unsubEmailPrefs(); unsubInventoryPrefs(); };
   }, [appId]);
 
   const addMember = async (e) => {
@@ -1592,10 +1640,17 @@ const SettingsModule = ({ appId, showToast }) => {
     showToast('Email preferences saved');
   };
 
+  const saveInventoryPrefs = async () => {
+    const inventoryPrefsRef = doc(db, 'artifacts', appId, 'users', COMPANY_ID, 'inventory_preferences', 'prefs');
+    await setDoc(inventoryPrefsRef, { ...inventoryPrefs, updatedAt: serverTimestamp() }, { merge: true });
+    showToast('Inventory preferences saved');
+  };
+
   const sections = [
     { id: 'organization', label: 'Organization Profile', icon: Building2 },
     { id: 'invoice', label: 'Invoice Preferences', icon: FileText },
     { id: 'email', label: 'Email Settings', icon: Mail },
+    { id: 'inventory', label: 'Inventory Preferences', icon: Package },
     { id: 'users', label: 'Users & Roles', icon: Users },
     { id: 'integrations', label: 'Integrations', icon: Link },
     { id: 'security', label: 'Privacy & Security', icon: Lock },
@@ -1670,6 +1725,29 @@ const SettingsModule = ({ appId, showToast }) => {
                 <div><label className="text-xs font-bold text-gray-500 mb-1 block">Send reminder after (days)</label><input type="number" className="w-full p-3 border rounded-xl dark:bg-slate-800" value={emailPrefs.reminderDays} onChange={e => setEmailPrefs({ ...emailPrefs, reminderDays: parseInt(e.target.value) })} /></div>
               </div>
               <Button onClick={saveEmailPrefs} className="mt-4">Save Email Settings</Button>
+            </div>
+          )}
+
+          {activeSection === 'inventory' && (
+            <div className="space-y-4">
+              <h3 className="font-bold text-lg mb-4">Inventory Preferences</h3>
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" checked={inventoryPrefs.enableLowStockAlerts} onChange={e => setInventoryPrefs({ ...inventoryPrefs, enableLowStockAlerts: e.target.checked })} />
+                  <label className="text-sm dark:text-gray-300">Enable low stock alerts</label>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 block">Low Stock Threshold</label>
+                  <input type="number" min="1" max="100" className="w-full p-3 border rounded-xl dark:bg-slate-800 dark:text-white" value={inventoryPrefs.lowStockThreshold} onChange={e => setInventoryPrefs({ ...inventoryPrefs, lowStockThreshold: parseInt(e.target.value) || 5 })} />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Items with quantity below this value will be highlighted as low stock</p>
+                </div>
+                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+                  <h4 className="font-bold text-sm text-amber-800 dark:text-amber-400 mb-2">Current Settings</h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-300">Alerts: <span className="font-bold">{inventoryPrefs.enableLowStockAlerts ? 'Enabled' : 'Disabled'}</span></p>
+                  <p className="text-xs text-gray-600 dark:text-gray-300">Threshold: <span className="font-bold">{inventoryPrefs.lowStockThreshold} units</span></p>
+                </div>
+              </div>
+              <Button onClick={saveInventoryPrefs} className="mt-4">Save Inventory Preferences</Button>
             </div>
           )}
 
