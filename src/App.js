@@ -1820,25 +1820,120 @@ const SettingsModule = ({ appId, showToast }) => {
 
 // --- 17. REPORTS MODULE ---
 const ReportsModule = ({ invoices, expenses }) => {
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [customerFilter, setCustomerFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter(inv => {
+      const invDate = new Date(inv.date);
+      const matchesDate = (!dateFrom || invDate >= new Date(dateFrom)) && (!dateTo || invDate <= new Date(dateTo));
+      const matchesCustomer = !customerFilter || inv.customerName?.toLowerCase().includes(customerFilter.toLowerCase());
+      const matchesStatus = statusFilter === 'all' || inv.status === statusFilter;
+      return matchesDate && matchesCustomer && matchesStatus;
+    });
+  }, [invoices, dateFrom, dateTo, customerFilter, statusFilter]);
+
   const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(invoices);
+    const ws = XLSX.utils.json_to_sheet(filteredInvoices);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Sales");
-    XLSX.writeFile(wb, "Inara_Sales_Report.xlsx");
+    XLSX.writeFile(wb, `Inara_Sales_Report_${Date.now()}.xlsx`);
+  };
+
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.text('INARA ERP - Sales Report', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 28);
+
+    if (dateFrom || dateTo) {
+      doc.text(`Period: ${dateFrom || 'Start'} to ${dateTo || 'Today'}`, 14, 34);
+    }
+
+    const tableData = filteredInvoices.map(inv => [
+      new Date(inv.date).toLocaleDateString(),
+      inv.billNumber || inv.id.slice(0, 8),
+      inv.customerName || 'Walk-in',
+      inv.status || 'Paid',
+      `₹${inv.total?.toLocaleString() || 0}`
+    ]);
+
+    doc.autoTable({
+      startY: dateFrom || dateTo ? 38 : 32,
+      head: [['Date', 'Bill #', 'Customer', 'Status', 'Amount']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [147, 51, 234] },
+      styles: { fontSize: 8 }
+    });
+
+    const totalRevenue = filteredInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+    const finalY = doc.lastAutoTable.finalY || 40;
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text(`Total Revenue: ₹${totalRevenue.toLocaleString()}`, 14, finalY + 10);
+    doc.text(`Total Invoices: ${filteredInvoices.length}`, 14, finalY + 18);
+
+    doc.save(`Inara_Sales_Report_${Date.now()}.pdf`);
+  };
+
+  const clearFilters = () => {
+    setDateFrom('');
+    setDateTo('');
+    setCustomerFilter('');
+    setStatusFilter('all');
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-800">Reports</h2>
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Reports & Analytics</h2>
         <div className="flex gap-2">
+          <Button onClick={exportPDF} variant="primary" icon={FileDown}>Export PDF</Button>
           <Button onClick={exportExcel} variant="secondary" icon={FileDown}>Export Excel</Button>
-          <Button onClick={() => downloadCSV(invoices, `inara_sales.csv`)} icon={Download}>Export CSV</Button>
+          <Button onClick={() => downloadCSV(filteredInvoices, `inara_sales.csv`)} variant="secondary" icon={Download}>Export CSV</Button>
         </div>
       </div>
+
+      {/* Advanced Filters */}
+      <Card className="p-4">
+        <h3 className="font-bold mb-3 text-gray-800 dark:text-white">Filters</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div>
+            <label className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 block">From Date</label>
+            <input type="date" className="w-full p-2 border rounded-lg dark:bg-slate-800 dark:text-white" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 block">To Date</label>
+            <input type="date" className="w-full p-2 border rounded-lg dark:bg-slate-800 dark:text-white" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 block">Customer</label>
+            <input placeholder="Search customer..." className="w-full p-2 border rounded-lg dark:bg-slate-800 dark:text-white" value={customerFilter} onChange={e => setCustomerFilter(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 block">Status</label>
+            <select className="w-full p-2 border rounded-lg dark:bg-slate-800 dark:text-white" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <option value="all">All Status</option>
+              <option value="Paid">Paid</option>
+              <option value="Pending">Pending</option>
+              <option value="Draft">Draft</option>
+              <option value="Overdue">Overdue</option>
+            </select>
+          </div>
+        </div>
+        <div className="flex gap-2 mt-3">
+          <Button onClick={clearFilters} variant="ghost" className="text-xs">Clear Filters</Button>
+          <Badge type="info">{filteredInvoices.length} results</Badge>
+        </div>
+      </Card>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card><h3 className="font-bold mb-4 text-gray-800">Recent Sales</h3><div className="overflow-auto h-64"><table className="w-full text-sm text-left"><thead><tr><th>Date</th><th>Customer</th><th>Amount</th></tr></thead><tbody>{invoices.slice(0, 20).map(inv => <tr key={inv.id} className="border-b"><td className="p-2">{new Date(inv.date).toLocaleDateString()}</td><td className="p-2">{inv.customerName}</td><td className="p-2 font-bold">₹{inv.total}</td></tr>)}</tbody></table></div></Card>
-        <Card><h3 className="font-bold mb-4 text-gray-800">Recent Expenses</h3><div className="overflow-auto h-64"><table className="w-full text-sm text-left"><thead><tr><th>Date</th><th>Cat</th><th>Amt</th></tr></thead><tbody>{expenses.slice(0, 20).map(e => <tr key={e.id} className="border-b"><td className="p-2">{e.date}</td><td className="p-2">{e.category}</td><td className="p-2 font-bold text-rose-600">₹{e.amount}</td></tr>)}</tbody></table></div></Card>
+        <Card><h3 className="font-bold mb-4 text-gray-800 dark:text-white">Recent Sales</h3><div className="overflow-auto h-64"><table className="w-full text-sm text-left"><thead><tr><th className="dark:text-gray-300">Date</th><th className="dark:text-gray-300">Customer</th><th className="dark:text-gray-300">Amount</th></tr></thead><tbody>{filteredInvoices.slice(0, 20).map(inv => <tr key={inv.id} className="border-b dark:border-gray-700"><td className="p-2 dark:text-gray-300">{new Date(inv.date).toLocaleDateString()}</td><td className="p-2 dark:text-gray-300">{inv.customerName}</td><td className="p-2 font-bold dark:text-white">₹{inv.total}</td></tr>)}</tbody></table></div></Card>
+        <Card><h3 className="font-bold mb-4 text-gray-800 dark:text-white">Recent Expenses</h3><div className="overflow-auto h-64"><table className="w-full text-sm text-left"><thead><tr><th className="dark:text-gray-300">Date</th><th className="dark:text-gray-300">Cat</th><th className="dark:text-gray-300">Amt</th></tr></thead><tbody>{expenses.slice(0, 20).map(e => <tr key={e.id} className="border-b dark:border-gray-700"><td className="p-2 dark:text-gray-300">{e.date}</td><td className="p-2 dark:text-gray-300">{e.category}</td><td className="p-2 font-bold text-rose-600 dark:text-rose-400">₹{e.amount}</td></tr>)}</tbody></table></div></Card>
       </div>
     </div>
   );
@@ -1876,6 +1971,55 @@ const InaraApp = () => {
     const unsubParty = onSnapshot(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'parties'), s => setParties(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     return () => { unsubTeam(); unsubInv(); unsubBill(); unsubExp(); unsubOut(); unsubParty(); };
   }, []);
+
+  // Audit Log Utility
+  const logAudit = async (action, module, details) => {
+    try {
+      await addDoc(collection(db, 'artifacts', APP_ID, 'users', COMPANY_ID, 'audit_log'), {
+        action, // CREATE, UPDATE, DELETE
+        module, // Inventory, Invoice, etc.
+        userId: currentUser?.userId || 'system',
+        userName: currentUser?.name || 'System',
+        details: JSON.stringify(details),
+        timestamp: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Audit log error:', error);
+    }
+  };
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      // Ignore if typing in input/textarea
+      if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+
+      const isMod = e.metaKey || e.ctrlKey;
+
+      if (isMod && e.key === 'n') {
+        e.preventDefault();
+        setActiveTab('billing');
+        showToast('Opening POS Terminal');
+      } else if (isMod && e.key === 'e') {
+        e.preventDefault();
+        setActiveTab('estimates');
+        showToast('Opening Estimates');
+      } else if (isMod && e.key === 'i') {
+        e.preventDefault();
+        setActiveTab('inventory');
+        showToast('Opening Inventory');
+      } else if (isMod && e.key === '/') {
+        e.preventDefault();
+        setIsSearchOpen(true);
+      } else if (e.key === '?') {
+        e.preventDefault();
+        showToast('Shortcuts: Cmd/Ctrl+N (Invoice), Cmd/Ctrl+E (Estimate), Cmd/Ctrl+I (Inventory), Cmd/Ctrl+/ (Search)');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [currentUser]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
